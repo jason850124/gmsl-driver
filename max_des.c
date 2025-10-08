@@ -24,8 +24,8 @@ struct max_des_priv{
     struct i2c_atr *atr;
     struct i2c_mux_core *mux;
 
-    //struct media_pad *pads;
-    //struct regulator **pocs;
+    struct media_pad *pads;
+    struct regulator **pocs;
 	struct max_source *sources;
 	u64 *streams_masks;
 
@@ -36,10 +36,57 @@ struct max_des_priv{
     struct max_des_phy *unused_phy;
 };
 
+int max_des_parse_dt(struct max_des_priv *priv){
 
-int max_des_alloc(struct max_des_priv *priv){
+    struct device *dev = priv->dev;
+    
 
-    #
+    return 0;
+
+}
+
+unsigned int max_des_num_pads(struct max_des *des){
+    return des->ops->num_links+des->ops->num_phys;
+}
+
+
+int max_des_allocate(struct max_des_priv *priv){
+
+    //we need to use priv and des, so first step we need to point to actual address;
+    //and we also need to now actual pads' number of this device
+    struct max_des *des = priv->des;
+    unsigned int num_pads = max_des_num_pads(des);
+
+    //distribute memories; and check if alloc is success or not.
+    des->phys = devm_kcalloc(priv->dev, des->ops->num_phys, sizeof(*dev->phys), GFP_KERNEL);
+    if(!des->phys)  
+        return -ENOMEM;
+
+    des->pipes = devm_kcalloc(priv->dev, des->ops->num_pipes, sizeof(*dev->pipes), GFP_KERNEL);
+    if(!des->pipes)
+        return -ENOMEM;
+
+    des->links = devm_kcalloc(priv->dev, des->ops->num_links, sizeof(*dev->links), GFP_KERNEL);
+    if(!des->links)
+        return -ENOMEM;
+
+    priv->pads = devm_kcalloc(priv->dev, num_pads, sizeof(*priv->pads), GFP_KERNEL);
+    if(!priv->pads)
+        return -ENOMEM;
+
+    priv->sources = devm_kcalloc(priv->dev, des->ops->links, sizeof(*priv->sources), GFP_KERNEL);
+    if(!priv->sources)
+        return -ENOMEM;
+
+    priv->pocs = devm_kcalloc(priv->dev, des->ops->links, sizeof(*priv->pocs), GFP_KERNEL);
+    if(!priv->pocs)
+        return -ENOMEM;
+
+    priv->streams_masks = devm_kcalloc(priv->dev, num_pads, sizeof(*priv->streams_masks), GFP_KERNEL);
+    if(!priv->streams_masks)
+        return -ENOMEM;
+
+    return 0;
 
 }
 
@@ -76,6 +123,9 @@ int max_des_probe(struct i2c_client *client, struct max_des *des){
     if(ret)
         return ret;
     //5. parse device tree information
+    ret = max_des_parse_dt(priv);
+    if(ret)
+        return ret;
 
     //6. general deserializer init
 
