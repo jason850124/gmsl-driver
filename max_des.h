@@ -1,6 +1,8 @@
 #ifndef MAX_DES_H___
 #define MAX_DES_H___
 
+#include <linux/v4l2-mediabus.h>
+
 
 // deserializer private state 
 struct max_des_priv;
@@ -54,6 +56,13 @@ struct max_des_ops{
 				enum max_gmsl_version version);
 };
 
+
+struct max_des_phy_mode {
+	bool alt_mem_map8;
+	bool alt2_mem_map8;
+	bool alt_mem_map10;
+	bool alt_mem_map12;
+};
 
 struct max_des_phy{
 	unsigned int index;
