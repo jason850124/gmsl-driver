@@ -104,7 +104,7 @@ struct max_des{
     struct max_des_pipe *pipes;
     struct max_des_link *links;
     
-    //unsigned int phys_config;
+    unsigned int phys_config;
     bool tunnel;
     bool activate;
     

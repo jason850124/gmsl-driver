@@ -10,6 +10,7 @@
 
 
 #include "max_des.h"
+#include "max_serdes.h"
 
 #define MAX_DES_LINK_FREQUENCY_MIN 100000000ull
 #define MAX_DES_LINK_FREQUENCY_DEFAULT 750000000ull
@@ -47,8 +48,10 @@ static int max_des_phy_to_pad(struct max_des *des, struct max_des_phy *phy)
 
 static int max_des_parse_src_dt(struct max_des_priv *priv, 
                                 struct max_des_phy *phy,
-                                struct fwnode_handle *fwnode)
+                                struct fwnode_handle *fwnode) //represent gmsl device self
 {
+    /*create fwnode_handle item as an endpoint, and anaylze it's format 
+    and regist it to v4l2 subsystem ---- for phys (gmsl link to SoC)*/
     struct max_des *des = priv->des;
     struct v4l2_fwnode_endpoint v4l2_ep = {.bus = V4L2_MBUS_UNKNOWN};
     struct v4l2_mbus_config_mipi_csi2 *mipi = &v4l2_ep.bus.mipi_csi2;
@@ -57,21 +60,22 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
     u64 link_frequency;
     unsigned int i;
     int ret;
-
+    //get pad number
     u32 pad = max_des_phy_to_pad(des,phy);
-
+    //get endpoint by port and endpoint numbers ---> (parent fwnode/ id for port/ id for ep under the port/ fwnode lookup flags)
     ep = fwnode_graph_get_endpoint_by_id(fwnode, pad, 0,0);
     if(!ep)
         return 0;
-
+    //analyze endpoint and regist it to v4l2 sub-system
     ret = v4l2_fwnode_endpoint_alloc_parse(ep, &v4l2_ep);
+    //release endpoint
     fwnode_handle_put(ep);
     if(ret)
     {
         dev_err(priv->dev, "Could not parse endpoint on port %u\n", pad);
         return ret;
     }
-
+    //check interface type
     bus_type = v4l2_ep.bus_type;
     if(bus_type != V4L2_MBUS_CSI2_DPHY &&
        bus_type != V4L2_MBUS_CSI2_CPHY)
@@ -81,7 +85,7 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
                 bus_type, pad);
         return -EINVAL;
     }
-
+    //check frequency
     ret = 0;
     if(v4l2_ep.nr_of_link_frequencies == 0)
         link_frequency = MAX_DES_LINK_FREQUENCY_DEFAULT;
@@ -89,7 +93,7 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
         link_frequency = v4l2_ep.nr_of_link_frequencies[0];
     else:
         ret = -EINVAL;
-
+    //release v4l2 endpoint
     v4l2_fwnode_endpoint_free(&v4l2_ep);
 
     if(ret)
@@ -108,6 +112,7 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
         return -EINVAL;
     }
 
+    //check mipi's number of lanes (mipi is endpoint's physical)
     for(i = 0; i < mipi->num_data_lanes; i++)
     {
         if(mipi->data_lanes[i] > mipi->data_lanes){
@@ -117,6 +122,7 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
         return -EINVAL;
     }
 
+    //load features to device's settings
     phy->bus_type = bus_type;
     phy->mipi = *mipi;
     phy->link_frequency = link_frequency;
@@ -126,7 +132,59 @@ static int max_des_parse_src_dt(struct max_des_priv *priv,
 }
 
 static int max_dex_find_phys_config(struct max_des_priv *priv)
-{
+{   
+    /*use this function to check DT's phys configuration 
+      is under device's limit and match one of device's settings.*/
+    struct max_des *des = priv->des;
+    const struct max_phys_configs *configs = &des->ops->phys_configs;
+    struct max_des_phy *phy;
+    
+    int i,j;
+
+    for(i = 0; i < configs->num_configs; i++)
+    {
+        const struct max_phys_config *config = &configs->configs[i];
+        bool matching = true;
+        bool all_phys_disable = true;
+
+        for(j = 0; j < des->ops->num_phys; j++)
+        {
+            phy = &des->phys[j];
+
+            if(!phy->enabled)
+                continue;
+
+            all_phys_disable = false;
+
+            if(phy->mipi.data_lanes <= config->lanes[j] &&
+               phy->mipi.clock_lane == config->clock_lane[j])
+                continue;
+
+            matching = false;
+            break;
+        }
+
+        if(matching)
+            break;
+
+    }
+
+    //identify the exact error
+    if(i == configs->num_configs)
+    {
+        if(all_phys_disable)
+            dev_err(priv->dev, "All Phys don't enable.\n");
+        else
+            dev_err(priv->dev, "Invalid lane configuration.\n");
+        return -EINVAL;
+    }
+
+    des->phys_config = i;
+
+    return 0;
+
+    
+
 
 }
 
@@ -142,7 +200,7 @@ int max_des_parse_dt(struct max_des_priv *priv)
     unsigned int i;
     int ret;
     
-
+    /*1. checkout and set phys*/
     for(i=0;i<des->ops->num_phys;i++)
     {
         phy = &des->phys[i];
@@ -152,12 +210,12 @@ int max_des_parse_dt(struct max_des_priv *priv)
         if(ret)
             return ret;
     }
-    /* need to be create: used to find which phy's setting is match to DT.*/
+    /*find which phy's setting is match to DT.*/
     ret = max_des_find_phys_config(priv);
     if(ret)
         return ret;
 
-    /*Find an */
+    /*Find an unused PHY to send unampped data to.*/
     for(i=0; i< des->ops->num_phys; i++)
     {
         phy = &des->phys[i];
@@ -167,7 +225,21 @@ int max_des_parse_dt(struct max_des_priv *priv)
             break;
     }
 
-    for()
+
+    /*2. checkout and set pipes (should checkout stream id also)*/
+    for(i = 0; i <= des->ops->num_pipes; i++)
+    {
+        pipe = &des->pipes[i];
+
+        if(des->ops->needs_unique_stream_id)
+            pipe->stream_id = i;
+        else
+            pipe->stream_id = 0;
+
+        pipe->link_id = i;
+    }
+
+    /*3. checkout and set links*/
     
     
 
@@ -261,6 +333,9 @@ int max_des_probe(struct i2c_client *client, struct max_des *des)
         return ret;
 
     //6. general deserializer init
+    ret = max_des_init(priv);
+    if(ret)
+        return ret;
 
     //7. manage power function
 
