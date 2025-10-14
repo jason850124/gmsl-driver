@@ -1,7 +1,10 @@
+/**/
 #ifndef MAX_DES_H___
 #define MAX_DES_H___
 
 #include <linux/v4l2-mediabus.h>
+
+#include "max_serdes.h"
 
 
 // deserializer private state 

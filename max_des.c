@@ -183,10 +183,65 @@ static int max_dex_find_phys_config(struct max_des_priv *priv)
 
     return 0;
 
-    
-
-
 }
+
+static int max_des_find_link_source(struct max_des_priv *priv, struct max_des_link *link)
+{
+    return &priv->sources[link->index];
+}
+
+static int max_des_link_to_pad(struct max_des *des, struct max_des_link *link)
+{
+    return link->index;
+}
+//we need to check whole error codes' means
+static int max_des_parse_sink_dt(struct max_des_priv *priv, struct max_des_link *link,
+                                 struct max_source *source, struct fwnode_handle *fwnode)
+{
+    struct max_des *des = priv->des;
+    struct fwnode_handle *ep;
+    char poc_name[10];
+    int ret;
+    // unsigned int index = link->index;
+
+    //get pad number
+    u32 pad = max_des_link_to_pad(des,link);
+    //get endpoint by port and endpoint numbers ---> (parent fwnode/ id for port/ id for ep under the port/ fwnode lookup flags)
+    ep = fwnode_graph_get_endpoint_by_id(fwnode, pad, 0,0);
+    if(!ep)
+        return 0;
+
+    source->ep_fwnode = fwnode_graph_get_remote_endpoint(ep);
+    fwnode_handle_put(ep);
+    if(!source->ep_fwnode)
+    {
+        dev_err(priv->dev, "Failed to get remote endpoint on port %u\n", pad);
+        return -ENODEV;
+    }
+
+    snprintf(poc_name, sizeof(poc_name), "port%u-poc", pad); //need to check (check snprintf function and check index/pad, i think they're same thing)
+    priv->pocs[pad] = devm_regulator_get_optional(priv->dev, poc_name); //need to check
+    if(IS_ERR(priv->pocs[pad]))  //need to check
+    {
+        ret = PTR_ERR(priv->pocs[pad]); //need to check 
+        if(ret != -ENODEV)
+        {
+            dev_err(priv->dev, "Failed to get POC supply on part %u: %d\n", pad, ret);
+            goto err_put_source_ep_fwnodee;
+        }
+
+        priv->pocs[pad] = NULL;
+    }
+
+    link->enabled = true;
+
+    err_put_source_ep_fwnode:
+        fwnode_handle_put(source->ep_fwnode);
+
+    return ret;
+    
+}
+
 
 int max_des_parse_dt(struct max_des_priv *priv)
 {
@@ -201,7 +256,7 @@ int max_des_parse_dt(struct max_des_priv *priv)
     int ret;
     
     /*1. checkout and set phys*/
-    for(i=0;i<des->ops->num_phys;i++)
+    for(i = 0; i < des->ops->num_phys; i++)
     {
         phy = &des->phys[i];
         phy->index = i;
@@ -216,7 +271,7 @@ int max_des_parse_dt(struct max_des_priv *priv)
         return ret;
 
     /*Find an unused PHY to send unampped data to.*/
-    for(i=0; i< des->ops->num_phys; i++)
+    for(i = 0; i < des->ops->num_phys; i++)
     {
         phy = &des->phys[i];
 
@@ -227,7 +282,7 @@ int max_des_parse_dt(struct max_des_priv *priv)
 
 
     /*2. checkout and set pipes (should checkout stream id also)*/
-    for(i = 0; i <= des->ops->num_pipes; i++)
+    for(i = 0; i < des->ops->num_pipes; i++)
     {
         pipe = &des->pipes[i];
 
@@ -240,7 +295,21 @@ int max_des_parse_dt(struct max_des_priv *priv)
     }
 
     /*3. checkout and set links*/
-    
+    for(i = 0; i < des->ops->num_links; i++)
+    {
+        struct max_source *source;
+        link = &des->links[i];
+        link->index = i;
+
+        source = max_des_find_link_source(priv, link);
+        if(!source)
+            return -ENOENT;
+
+        ret = max_des_parse_sink_dt(priv, link, source, fwnode);
+        if(ret)
+            return ret;
+
+    }
     
 
     return 0;
