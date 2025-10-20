@@ -219,11 +219,14 @@ static int max_des_parse_sink_dt(struct max_des_priv *priv, struct max_des_link 
         return -ENODEV;
     }
 
-    snprintf(poc_name, sizeof(poc_name), "port%u-poc", pad); //need to check (check snprintf function and check index/pad, i think they're same thing)
-    priv->pocs[pad] = devm_regulator_get_optional(priv->dev, poc_name); //need to check
-    if(IS_ERR(priv->pocs[pad]))  //need to check
-    {
-        ret = PTR_ERR(priv->pocs[pad]); //need to check 
+    snprintf(poc_name, sizeof(poc_name), "port%u-poc", pad); 
+    /*This function is providing an optional power supply controller to Linux regulator framework*/
+    priv->pocs[pad] = devm_regulator_get_optional(priv->dev, poc_name);
+    /*IS_ERR: check if member is an error flag*/
+    if(IS_ERR(priv->pocs[pad]))
+    {   
+        /*get back error code*/
+        ret = PTR_ERR(priv->pocs[pad]);
         if(ret != -ENODEV)
         {
             dev_err(priv->dev, "Failed to get POC supply on part %u: %d\n", pad, ret);
@@ -304,6 +307,8 @@ int max_des_parse_dt(struct max_des_priv *priv)
         source = max_des_find_link_source(priv, link);
         if(!source)
             return -ENOENT;
+        
+        source->index = i;
 
         ret = max_des_parse_sink_dt(priv, link, source, fwnode);
         if(ret)
@@ -363,6 +368,110 @@ int max_des_allocate(struct max_des_priv *priv)
 
 }
 
+static int max_des_set_pipe_remaps(struct max_des_priv *priv, struct max_des_pipe *pipe,
+                                   struct max_des_remap *remaps, unsigned int num_remaps)
+{
+    //need to check2
+    struct max_des *des = priv->des;
+    unsigned int mask = 0;
+    unsigned int i;
+    int ret;
+
+    for(i = 0; i < num_remaps; i++)
+    {
+        struct max_des_remap *remap = &remaps[i];
+
+        ret = des->ops->set_pipe_remap(des, pipe, i, remap);
+        if(ret)
+            return ret;
+
+        mask |= BIT(i);
+    }
+
+    return des->ops->set_pipe_remaps_enable(des, pipe, mask);
+
+}
+
+static int max_des_init(struct max_des_priv *priv)
+{
+    struct max_des *des = priv->des;
+    unsigned int i;
+    int ret;
+
+    /*we can check if device has init process or default settings*/
+    if(des->ops->init)
+    {
+        ret = des->ops->init(des);
+        if(ret)
+            return ret;
+    }
+    
+    /*disable device until whole settings are ready*/
+    ret = des->ops->set_enable(des,false);
+    if(ret)
+        return ret;
+
+    for(i = 0; i < des->ops->num_phys; i++)
+    {
+        struct max_des_phy *phy = &des->phys[i];
+
+        if(phy->enabled)
+        {
+            ret = des->ops->init_phy(des, phy);
+            if(ret)
+                return ret;
+        }   
+
+        ret = des->ops->set_phy_active(des, phy, false);
+        if(ret)
+            return ret;
+    }
+    /*need to check(why pipes is init like this)*/
+    for(i = 0; i < des->ops->num_pipes; i++)
+    {
+        struct max_des_pipe *pipe = &des->pipes[i];
+
+        ret = des->ops->set_pipe_enable(des, pipe, false);
+        if(ret)
+            return ret;
+        
+        if(des->ops->set_pipe_tunnel_enable)
+        {
+            ret = des->ops->set_pipe_tunnel_enable(des, pipe, false);
+            if(ret)
+                return ret;
+        }
+
+        ret = des->ops->set_pipe_stream_id(des, pipe, pipe->stream_id);
+        if(ret)
+            return ret;
+
+        ret = max_des_set_pipe_remaps(priv, pipe, pipe->remaps, pipe->num_remaps);
+        if(ret)
+            return ret;
+
+    }
+
+    /*need to check*/
+    if(!des->ops->init_link)
+        return 0;
+
+    for(i = 0; i < des->ops->num_links; i++)
+    {
+        struct max_des_link *link = &des->links[i];
+
+        if(!link->enabled)
+            continue;
+
+        ret = des->ops->init_link(des, link);
+        if(ret)
+            return ret;
+    }
+
+    return 0;
+
+}
+
 
 // This function is used to probe device into Linux kernel.
 int max_des_probe(struct i2c_client *client, struct max_des *des)
@@ -407,6 +516,7 @@ int max_des_probe(struct i2c_client *client, struct max_des *des)
         return ret;
 
     //7. manage power function
+
 
     //8. i2c init
 

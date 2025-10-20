@@ -9,6 +9,19 @@
 
 //need check
 
+
+//need check
+enum max_gmsl_version
+{
+    MAX_GMSL_MIN,
+    MAX_GMSL_2_3_Gbps = MAX_GMSL_MIN,
+    MAX_GMSL_2_6Gbps,
+    MAX_GMSL_3,
+    MAX_GMSL_MAX = MAX_GMSL_3,
+};
+
+
+
 //v4l2_subdev, pad no., endpoint, index(remote device, pad number in this device, endpoint for remote, index in this device?) need check
 struct max_source
 {
@@ -16,7 +29,7 @@ struct max_source
     u64 pad;
     struct fwnode_handle *ep_fwnode;
     unsigned int index;
-}
+} //pad:represent no. pad of v4l2, index:represent this source is connect to which link of derializer
 
 //lanes, clock lanes
 struct max_phys_config
