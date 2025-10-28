@@ -273,7 +273,6 @@ static int max96724_log_pipe_status(struct max_des* des, struct max_des_pipe *pi
 }
 
 
-
 int max96724_set_pipe_tunnel_enable(struct max_des *des, struct max_des_pipe *pipe, bool enable)
 {
     struct max96724_priv* priv = des_to_priv(des);
