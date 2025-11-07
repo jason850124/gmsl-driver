@@ -1,6 +1,6 @@
 //need to check
 //need to note
-
+//need to check (phy, pipe)
 
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
@@ -335,11 +335,12 @@ static int max96724_log_phy_status(struct max_des *des,
 static int max96724_set_enable(struct max_des *des, bool enable)
 {
 	struct max96724_priv *priv = des_to_priv(des);
-
+    /*CSI output enable*/
 	return regmap_assign_bits(priv->regmap, MAX96724_BACKTOP12,
 				  MAX96724_BACKTOP12_CSI_OUT_EN, enable);
 }
 
+/*need to check (phy,pipe)*/
 static int max96724_init(struct max_des *des)
 {
 	struct max96724_priv *priv = des_to_priv(des);
@@ -347,7 +348,9 @@ static int max96724_init(struct max_des *des)
 	int ret;
 
 	if (priv->info->set_pipe_tunnel_enable) {
-		for (i = 0; i < des->ops->num_pipes; i++) {
+		for (i = 0; i < des->ops->num_phys; i++) { 
+            /*TX57 means we use tunnel mode and choose pipes connect to which phy*/
+            /*MAX96724_MIPI_TX57_DIS_AUTO_TUN_DET is used to disable automatic detection(1)*/
 			ret = regmap_set_bits(priv->regmap, MAX96724_MIPI_TX57(i),
 					      MAX96724_MIPI_TX57_DIS_AUTO_TUN_DET);
 			if (ret)
@@ -737,12 +740,13 @@ static int max96724_set_pipe_mode(struct max_des *des,
 				  MAX96724_BACKTOP32_BPP12(index), mode->dbl12);
 }
 
+//need to check (phy, pipe), we shouldn't use pipe->index as an reference (should use controller)
 static int max96724_set_pipe_tunnel_enable(struct max_des *des,
-					   struct max_des_pipe *pipe, bool enable)
+					   struct max_des_phy *phy, bool enable)
 {
 	struct max96724_priv *priv = des_to_priv(des);
-
-	return regmap_assign_bits(priv->regmap, MAX96724_MIPI_TX54(pipe->index),
+    /*pipe tunnel enable (tunneling)*/
+	return regmap_assign_bits(priv->regmap, MAX96724_MIPI_TX54(phy->index),
 				  MAX96724_MIPI_TX54_TUN_EN, enable);
 }
 
@@ -766,6 +770,7 @@ static int max96724_select_links(struct max_des *des, unsigned int mask)
 	return 0;
 }
 
+/*setup link speed refer to DTS settings*/
 static int max96724_set_link_version(struct max_des *des,
 				     struct max_des_link *link,
 				     enum max_gmsl_version version)
@@ -898,11 +903,11 @@ static int max96724_probe(struct i2c_client *client)
     struct max_des_ops *ops;
     
     /*1. distribute memories*/
-    priv = devm_kzalloc(priv->dev, sizeof(*priv), GFP_KERNEL);
+    priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
     if(!priv)
         return -ENOMEM;
 
-    ops = devm_kzalloc(priv->dev, sizeof(*ops), GFP_KERNEL);
+    ops = devm_kzalloc(dev, sizeof(*ops), GFP_KERNEL);
     if(!ops)
         return -ENOMEM;
     /*get device's info from corresponding "of match table"*/
@@ -946,7 +951,7 @@ static int max96724_probe(struct i2c_client *client)
 
 
     *ops = max96724_ops;
-    ops->version = priv->info->versions;
+    ops->versions = priv->info->versions;
     ops->num_pipes = priv->info->num_pipes;
     ops->set_pipe_tunnel_enable = priv->info->set_pipe_tunnel_enable;
     priv->des.ops = ops;

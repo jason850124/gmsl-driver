@@ -51,7 +51,8 @@ struct max_des_ops{
 				      unsigned int mask);
 	int (*set_pipe_mode)(struct max_des *des, struct max_des_pipe *pipe,
 			     struct max_des_pipe_mode *mode);
-	int (*set_pipe_tunnel_enable)(struct max_des *des, struct max_des_pipe *pipe,
+	/*set pipe tunnel enable parameter was changed*/
+	int (*set_pipe_tunnel_enable)(struct max_des *des, struct max_des_phy *phy,
 				      bool enable);
 	int (*init_link)(struct max_des *des, struct max_des_link *link);
 	int (*select_links)(struct max_des *des, unsigned int mask);
